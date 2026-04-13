@@ -262,6 +262,56 @@ async function fetchHtml(url) {
   );
 }
 
+function isLocalDevHost() {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+async function fetchModelFromLocalApi(url) {
+  const response = await fetchWithTimeout(`/api/model?url=${encodeURIComponent(url)}`, {}, 8000);
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Local API request failed.");
+  }
+
+  return payload;
+}
+
+async function fetchModelFromStatic(url) {
+  const { model, tag } = normalizeModelInput(url);
+  const modelUrl = `https://ollama.com/library/${encodeURIComponent(model)}`;
+  const tagsUrl = `${modelUrl}/tags`;
+
+  const [modelHtml, tagsHtml] = await Promise.all([fetchHtml(modelUrl), fetchHtml(tagsUrl)]);
+
+  const modelInfo = parseModelPage(modelHtml, model);
+  const variants = parseTagsPage(tagsHtml, model);
+  const variantsWithGb = variants.map((variant) => ({
+    ...variant,
+    sizeGb: parseNumericSizeInGB(variant.size)
+  }));
+
+  const selectedVariant = tag
+    ? variantsWithGb.find((variant) => variant.tag === tag) || null
+    : variantsWithGb[0] || null;
+
+  return {
+    sourceInput: url,
+    model,
+    tag,
+    modelUrl,
+    title: modelInfo.title,
+    description: modelInfo.description,
+    readmeTitle: modelInfo.readmeTitle,
+    readmeParagraph: modelInfo.readmeParagraph,
+    parameterHints: modelInfo.parameterHints,
+    selectedVariant,
+    variants: variantsWithGb,
+    totalVariants: variantsWithGb.length,
+    note: "Metadata only. This app does not download model weights."
+  };
+}
+
 /* ── URL state (shareable bookmarks) ─────────────────── */
 function pushUrlState(params) {
   const url = new URL(window.location);
@@ -382,38 +432,24 @@ function renderResult(data) {
 
 /* ── Fetch model data ────────────────────────────────── */
 async function fetchModel(url) {
-  const { model, tag } = normalizeModelInput(url);
-  const modelUrl = `https://ollama.com/library/${encodeURIComponent(model)}`;
-  const tagsUrl = `${modelUrl}/tags`;
+  let localError = null;
 
-  const [modelHtml, tagsHtml] = await Promise.all([fetchHtml(modelUrl), fetchHtml(tagsUrl)]);
+  if (isLocalDevHost()) {
+    try {
+      return await fetchModelFromLocalApi(url);
+    } catch (error) {
+      localError = error;
+    }
+  }
 
-  const modelInfo = parseModelPage(modelHtml, model);
-  const variants = parseTagsPage(tagsHtml, model);
-  const variantsWithGb = variants.map((variant) => ({
-    ...variant,
-    sizeGb: parseNumericSizeInGB(variant.size)
-  }));
-
-  const selectedVariant = tag
-    ? variantsWithGb.find((variant) => variant.tag === tag) || null
-    : variantsWithGb[0] || null;
-
-  return {
-    sourceInput: url,
-    model,
-    tag,
-    modelUrl,
-    title: modelInfo.title,
-    description: modelInfo.description,
-    readmeTitle: modelInfo.readmeTitle,
-    readmeParagraph: modelInfo.readmeParagraph,
-    parameterHints: modelInfo.parameterHints,
-    selectedVariant,
-    variants: variantsWithGb,
-    totalVariants: variantsWithGb.length,
-    note: "Metadata only. This app does not download model weights."
-  };
+  try {
+    return await fetchModelFromStatic(url);
+  } catch (error) {
+    if (localError) {
+      throw new Error(`Local API failed: ${localError.message}. Static fallback failed: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 /* ── Single visualize ────────────────────────────────── */
@@ -426,7 +462,7 @@ async function visualize(inputOverride) {
 
   modelInput.value = inputValue;
   visualizeBtn.disabled = true;
-  setStatus("Fetching model metadata via static proxy...");
+  setStatus(isLocalDevHost() ? "Fetching model metadata from local API..." : "Fetching model metadata via static proxy...");
 
   try {
     const data = await fetchModel(inputValue);
@@ -469,7 +505,7 @@ async function runCompare(aOverride, bOverride) {
   compareA.value = urlA;
   compareB.value = urlB;
   compareBtn.disabled = true;
-  setStatus("Fetching both models via static proxy...");
+  setStatus(isLocalDevHost() ? "Fetching both models from local API..." : "Fetching both models via static proxy...");
 
   try {
     const [dataA, dataB] = await Promise.all([fetchModel(urlA), fetchModel(urlB)]);
