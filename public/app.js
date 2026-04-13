@@ -206,19 +206,60 @@ function parseNumericSizeInGB(sizeText) {
   return null;
 }
 
-async function fetchHtml(url) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-  const response = await fetch(proxyUrl, {
-    headers: {
-      Accept: "text/html"
-    }
-  });
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 14000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch metadata via static CORS proxy.");
+  try {
+    return await fetch(resource, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchHtml(url) {
+  const encodedUrl = encodeURIComponent(url);
+  const proxyCandidates = [
+    `https://api.allorigins.win/raw?url=${encodedUrl}`,
+    `https://corsproxy.io/?${encodedUrl}`,
+    `https://cors.isomorphic-git.org/${url}`
+  ];
+
+  let lastError = null;
+
+  for (const proxyUrl of proxyCandidates) {
+    try {
+      const response = await fetchWithTimeout(
+        proxyUrl,
+        {
+          headers: {
+            Accept: "text/html"
+          }
+        },
+        14000
+      );
+
+      if (!response.ok) {
+        throw new Error(`Proxy request failed with ${response.status}.`);
+      }
+
+      const html = await response.text();
+      if (!html || html.length < 200) {
+        throw new Error("Proxy returned empty or truncated HTML.");
+      }
+
+      return html;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  return response.text();
+  throw new Error(
+    `Could not fetch model metadata right now. Please retry in a few seconds. ${lastError?.message || ""}`.trim()
+  );
 }
 
 /* ── URL state (shareable bookmarks) ─────────────────── */
