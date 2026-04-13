@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ollama Model Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <main class="shell">
+      <header class="hero reveal">
+        <p class="kicker">Metadata-Only Explorer</p>
+        <h1>Ollama Model Visualizer</h1>
+        <p class="subtitle">
+          Paste an Ollama model link and inspect variants, context windows, and size footprints without pulling
+          any model files.
+        </p>
+      </header>
+
+      <!-- Mode tabs -->
+      <nav class="mode-tabs reveal" style="--delay: 80ms">
+        <button class="mode-tab active" data-mode="single">Single Model</button>
+        <button class="mode-tab" data-mode="compare">Compare Models</button>
+      </nav>
+
+      <!-- Single model input -->
+      <section id="singleInput" class="input-card reveal" style="--delay: 120ms">
+        <label for="modelInput">Ollama Link</label>
+        <div class="input-row">
+          <input
+            id="modelInput"
+            type="url"
+            spellcheck="false"
+            value="https://ollama.com/library/llama3"
+            placeholder="https://ollama.com/library/llama3:latest"
+          />
+          <button id="visualizeBtn" type="button">Visualize</button>
+        </div>
+        <p class="hint">Examples: https://ollama.com/library/mistral, https://ollama.com/library/qwen2.5:14b</p>
+      </section>
+
+      <!-- Compare input -->
+      <section id="compareInput" class="input-card hidden reveal" style="--delay: 120ms">
+        <label>Compare Two Models</label>
+        <div class="compare-row">
+          <input id="compareA" type="url" spellcheck="false" placeholder="https://ollama.com/library/llama3" />
+          <span class="vs-label">vs</span>
+          <input id="compareB" type="url" spellcheck="false" placeholder="https://ollama.com/library/mistral" />
+          <button id="compareBtn" type="button">Compare</button>
+        </div>
+      </section>
+
+      <section id="status" class="status hidden"></section>
+
+      <!-- Single result -->
+      <section id="result" class="result hidden reveal" style="--delay: 200ms">
+        <div class="result-actions">
+          <button class="action-btn" id="exportPng" title="Export as PNG">PNG</button>
+          <button class="action-btn" id="exportJson" title="Export as JSON">JSON</button>
+          <button class="action-btn" id="shareBtn" title="Copy shareable link">Share</button>
+        </div>
+
+        <article class="topline">
+          <div>
+            <p class="mono" id="modelKey">model:name</p>
+            <h2 id="title">Model title</h2>
+            <p id="description"></p>
+          </div>
+          <div class="badge" id="variantCount">0 variants</div>
+        </article>
+
+        <article class="metrics-grid">
+          <div class="metric-box">
+            <p class="metric-label">Selected Variant</p>
+            <p class="metric-value" id="selectedVariant">-</p>
+          </div>
+          <div class="metric-box">
+            <p class="metric-label">Approx. Size</p>
+            <p class="metric-value" id="selectedSize">-</p>
+          </div>
+          <div class="metric-box">
+            <p class="metric-label">Context Window</p>
+            <p class="metric-value" id="selectedContext">-</p>
+          </div>
+          <div class="metric-box">
+            <p class="metric-label">Input Type</p>
+            <p class="metric-value" id="selectedInputType">-</p>
+          </div>
+        </article>
+
+        <article>
+          <h3>Variant Size Map</h3>
+          <div id="bars" class="bars"></div>
+        </article>
+
+        <article>
+          <h3>Variant Table</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th>Size</th>
+                  <th>Context</th>
+                  <th>Input</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="variantRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <p class="footer-note" id="note"></p>
+      </section>
+
+      <!-- Comparison result -->
+      <section id="compareResult" class="hidden">
+        <div class="result-actions">
+          <button class="action-btn" id="cmpExportPng" title="Export as PNG">PNG</button>
+          <button class="action-btn" id="cmpExportJson" title="Export as JSON">JSON</button>
+          <button class="action-btn" id="cmpShareBtn" title="Copy shareable link">Share</button>
+        </div>
+
+        <div class="compare-grid" id="compareGrid">
+          <!-- Model A -->
+          <div class="result compare-panel" id="panelA">
+            <article class="topline">
+              <div>
+                <p class="mono" id="cmpKeyA">-</p>
+                <h2 id="cmpTitleA">-</h2>
+                <p id="cmpDescA"></p>
+              </div>
+              <div class="badge" id="cmpCountA">0</div>
+            </article>
+            <article class="metrics-grid metrics-2col">
+              <div class="metric-box"><p class="metric-label">Default Size</p><p class="metric-value" id="cmpSizeA">-</p></div>
+              <div class="metric-box"><p class="metric-label">Context</p><p class="metric-value" id="cmpCtxA">-</p></div>
+              <div class="metric-box"><p class="metric-label">Input</p><p class="metric-value" id="cmpInputA">-</p></div>
+              <div class="metric-box"><p class="metric-label">Params</p><p class="metric-value" id="cmpParamsA">-</p></div>
+            </article>
+            <h3>Variant Sizes</h3>
+            <div id="cmpBarsA" class="bars"></div>
+          </div>
+
+          <!-- Model B -->
+          <div class="result compare-panel" id="panelB">
+            <article class="topline">
+              <div>
+                <p class="mono" id="cmpKeyB">-</p>
+                <h2 id="cmpTitleB">-</h2>
+                <p id="cmpDescB"></p>
+              </div>
+              <div class="badge" id="cmpCountB">0</div>
+            </article>
+            <article class="metrics-grid metrics-2col">
+              <div class="metric-box"><p class="metric-label">Default Size</p><p class="metric-value" id="cmpSizeB">-</p></div>
+              <div class="metric-box"><p class="metric-label">Context</p><p class="metric-value" id="cmpCtxB">-</p></div>
+              <div class="metric-box"><p class="metric-label">Input</p><p class="metric-value" id="cmpInputB">-</p></div>
+              <div class="metric-box"><p class="metric-label">Params</p><p class="metric-value" id="cmpParamsB">-</p></div>
+            </article>
+            <h3>Variant Sizes</h3>
+            <div id="cmpBarsB" class="bars"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

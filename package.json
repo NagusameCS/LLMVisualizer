@@ -1,0 +1,15 @@
+{
+  "name": "llm-visualizer",
+  "version": "1.0.0",
+  "description": "Visualize Ollama model metadata from links without downloading models",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0"
+  }
+}
