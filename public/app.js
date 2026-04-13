@@ -28,6 +28,7 @@ const compareGrid = document.getElementById("compareGrid");
 
 let lastPayload = null;
 let lastComparePayload = null;
+const htmlCache = new Map();
 
 /* ── Mode tabs ───────────────────────────────────────── */
 document.querySelectorAll(".mode-tab").forEach((tab) => {
@@ -221,39 +222,47 @@ async function fetchWithTimeout(resource, options = {}, timeoutMs = 14000) {
 }
 
 async function fetchHtml(url) {
+  if (htmlCache.has(url)) {
+    return htmlCache.get(url);
+  }
+
   const encodedUrl = encodeURIComponent(url);
   const proxyCandidates = [
     `https://api.allorigins.win/raw?url=${encodedUrl}`,
     `https://corsproxy.io/?${encodedUrl}`,
-    `https://cors.isomorphic-git.org/${url}`
+    `https://cors.isomorphic-git.org/${url}`,
+    `https://r.jina.ai/http://ollama.com${new URL(url).pathname}`
   ];
 
   let lastError = null;
 
   for (const proxyUrl of proxyCandidates) {
-    try {
-      const response = await fetchWithTimeout(
-        proxyUrl,
-        {
-          headers: {
-            Accept: "text/html"
-          }
-        },
-        14000
-      );
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(
+          proxyUrl,
+          {
+            headers: {
+              Accept: "text/html"
+            }
+          },
+          14000
+        );
 
-      if (!response.ok) {
-        throw new Error(`Proxy request failed with ${response.status}.`);
+        if (!response.ok) {
+          throw new Error(`Proxy request failed with ${response.status}.`);
+        }
+
+        const html = await response.text();
+        if (!html || html.length < 200) {
+          throw new Error("Proxy returned empty or truncated HTML.");
+        }
+
+        htmlCache.set(url, html);
+        return html;
+      } catch (error) {
+        lastError = error;
       }
-
-      const html = await response.text();
-      if (!html || html.length < 200) {
-        throw new Error("Proxy returned empty or truncated HTML.");
-      }
-
-      return html;
-    } catch (error) {
-      lastError = error;
     }
   }
 
