@@ -66,6 +66,161 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function normalizeModelInput(input) {
+  if (!input || typeof input !== "string") {
+    throw new Error("Missing model input.");
+  }
+
+  const trimmed = input.trim();
+  let model = "";
+  let tag = "";
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    const url = new URL(trimmed);
+    if (url.hostname !== "ollama.com") {
+      throw new Error("Only ollama.com links are supported.");
+    }
+
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments[0] !== "library" || !segments[1]) {
+      throw new Error("Use an Ollama library link like https://ollama.com/library/llama3.");
+    }
+
+    const modelTag = segments[1];
+    const parts = modelTag.split(":");
+    model = parts[0];
+    tag = parts[1] || "";
+  } else {
+    const parts = trimmed.split(":");
+    model = parts[0];
+    tag = parts[1] || "";
+  }
+
+  if (!model) {
+    throw new Error("Could not detect a model name from that input.");
+  }
+
+  return { model, tag };
+}
+
+function parseModelPage(html, modelName) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const title = doc.querySelector("head title")?.textContent?.trim() || modelName;
+  const description =
+    doc.querySelector("meta[name='description']")?.getAttribute("content")?.trim() ||
+    "No description available.";
+
+  const readmeTitle = doc.querySelector("#display h1")?.textContent?.trim() || "";
+  const readmeParagraph = doc.querySelector("#display p")?.textContent?.trim() || "";
+
+  const parameterHints = [];
+  doc.querySelectorAll("[x-test-size]").forEach((el) => {
+    const size = el.textContent?.trim();
+    if (size) {
+      parameterHints.push(size);
+    }
+  });
+
+  return {
+    title,
+    description,
+    readmeTitle,
+    readmeParagraph,
+    parameterHints: [...new Set(parameterHints)]
+  };
+}
+
+function parseTagsPage(html, modelName) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const variants = [];
+
+  doc.querySelectorAll("div.group.px-4.py-3").forEach((row) => {
+    const desktop = row.querySelector("div.hidden.md\\:flex");
+    if (!desktop) {
+      return;
+    }
+
+    const tagAnchor = desktop.querySelector("div.grid a[href^='/library/']");
+    const fullName = tagAnchor?.textContent?.trim() || "";
+    if (!fullName || !fullName.startsWith(`${modelName}:`)) {
+      return;
+    }
+
+    const gridColumns = desktop.querySelector("div.grid");
+    const size = gridColumns?.querySelector("p.col-span-2")?.textContent?.trim() || "";
+    const contextWindow = gridColumns?.querySelectorAll("p.col-span-2")?.[1]?.textContent?.trim() || "";
+    const inputType = gridColumns?.querySelector("div.col-span-2")?.textContent?.trim() || "";
+
+    const metaLine =
+      desktop.querySelector("div.flex.text-neutral-500.text-xs")?.textContent?.trim() || "";
+    let digest = "";
+    let updated = "";
+    if (metaLine.includes("·")) {
+      const bits = metaLine
+        .split("·")
+        .map((v) => v.trim())
+        .filter(Boolean);
+      digest = bits[0] || "";
+      updated = bits[1] || "";
+    }
+
+    variants.push({
+      fullName,
+      tag: fullName.split(":").slice(1).join(":"),
+      size,
+      contextWindow,
+      inputType,
+      digest,
+      updated
+    });
+  });
+
+  return variants;
+}
+
+function parseNumericSizeInGB(sizeText) {
+  if (!sizeText) {
+    return null;
+  }
+
+  const match = sizeText.match(/([\d.]+)\s*(GB|MB|TB)/i);
+  if (!match) {
+    return null;
+  }
+
+  const value = Number(match[1]);
+  const unit = match[2].toUpperCase();
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  if (unit === "GB") {
+    return value;
+  }
+  if (unit === "MB") {
+    return value / 1024;
+  }
+  if (unit === "TB") {
+    return value * 1024;
+  }
+  return null;
+}
+
+async function fetchHtml(url) {
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const response = await fetch(proxyUrl, {
+    headers: {
+      Accept: "text/html"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch metadata via static CORS proxy.");
+  }
+
+  return response.text();
+}
+
 /* ── URL state (shareable bookmarks) ─────────────────── */
 function pushUrlState(params) {
   const url = new URL(window.location);
@@ -186,10 +341,38 @@ function renderResult(data) {
 
 /* ── Fetch model data ────────────────────────────────── */
 async function fetchModel(url) {
-  const response = await fetch(`/api/model?url=${encodeURIComponent(url)}`);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Could not fetch model details.");
-  return payload;
+  const { model, tag } = normalizeModelInput(url);
+  const modelUrl = `https://ollama.com/library/${encodeURIComponent(model)}`;
+  const tagsUrl = `${modelUrl}/tags`;
+
+  const [modelHtml, tagsHtml] = await Promise.all([fetchHtml(modelUrl), fetchHtml(tagsUrl)]);
+
+  const modelInfo = parseModelPage(modelHtml, model);
+  const variants = parseTagsPage(tagsHtml, model);
+  const variantsWithGb = variants.map((variant) => ({
+    ...variant,
+    sizeGb: parseNumericSizeInGB(variant.size)
+  }));
+
+  const selectedVariant = tag
+    ? variantsWithGb.find((variant) => variant.tag === tag) || null
+    : variantsWithGb[0] || null;
+
+  return {
+    sourceInput: url,
+    model,
+    tag,
+    modelUrl,
+    title: modelInfo.title,
+    description: modelInfo.description,
+    readmeTitle: modelInfo.readmeTitle,
+    readmeParagraph: modelInfo.readmeParagraph,
+    parameterHints: modelInfo.parameterHints,
+    selectedVariant,
+    variants: variantsWithGb,
+    totalVariants: variantsWithGb.length,
+    note: "Metadata only. This app does not download model weights."
+  };
 }
 
 /* ── Single visualize ────────────────────────────────── */
@@ -202,7 +385,7 @@ async function visualize(inputOverride) {
 
   modelInput.value = inputValue;
   visualizeBtn.disabled = true;
-  setStatus("Fetching model metadata from Ollama...");
+  setStatus("Fetching model metadata via static proxy...");
 
   try {
     const data = await fetchModel(inputValue);
@@ -245,7 +428,7 @@ async function runCompare(aOverride, bOverride) {
   compareA.value = urlA;
   compareB.value = urlB;
   compareBtn.disabled = true;
-  setStatus("Fetching both models...");
+  setStatus("Fetching both models via static proxy...");
 
   try {
     const [dataA, dataB] = await Promise.all([fetchModel(urlA), fetchModel(urlB)]);

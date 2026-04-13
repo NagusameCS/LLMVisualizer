@@ -1,35 +1,32 @@
 # LLMVisualizer
 
-Web app that visualizes Ollama model metadata from a pasted Ollama Library link.
+Static web app that visualizes Ollama model metadata from a pasted Ollama Library link.
 
-It does not download model weights. It only fetches and parses public model page metadata.
+It does not download model weights.
 
 ## Features
 
 - Paste any `https://ollama.com/library/...` model link.
 - Visual summary for selected variant, size, context window, and input type.
 - Variant size map and detailed variant table.
-- Lightweight local proxy to avoid browser CORS issues.
+- Compare two models side-by-side.
+- Share/export results (PNG + JSON).
 
-## Run Locally
+## Static Hosting (GitHub Pages)
 
-1. Install dependencies:
+This repository includes a Pages workflow at `.github/workflows/deploy-pages.yml`.
 
-```bash
-npm install
-```
+How it works:
 
-2. Start the app:
+1. Push to `main`.
+2. GitHub Actions publishes the `public/` folder.
+3. The app is served from site root `/` (no `/root` path needed).
 
-```bash
-npm start
-```
+No runtime install is required for users visiting the site.
 
-3. Open:
+## Local Preview (No Install)
 
-```text
-http://localhost:3000
-```
+You can open `public/index.html` directly in a browser.
 
 ## Example Inputs
 
@@ -40,5 +37,6 @@ http://localhost:3000
 
 ## Notes
 
-- The app reads metadata from Ollama model and tags pages.
-- If a model page format changes on Ollama, parser logic may need updates.
+- Metadata is fetched client-side via a CORS-friendly static proxy.
+- If Ollama page markup changes, parsing logic may need updates.
+- `Unchecked runtime.lastError: The message port closed before a response was received.` is usually from a browser extension and not from this app's code.
