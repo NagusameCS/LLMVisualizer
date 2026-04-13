@@ -161,6 +161,27 @@ function renderResult(data) {
   noteEl.textContent = safeText(data.note, "Metadata only.");
   resultSection.classList.remove("hidden");
   compareResult.classList.add("hidden");
+
+  // ── Network architecture visualization ──
+  const networkSection = document.getElementById("networkSection");
+  const vizContainer = document.getElementById("networkVizContainer");
+  const archSummary = document.getElementById("archSummary");
+
+  if (window.currentViz) { window.currentViz.destroy(); window.currentViz = null; }
+
+  if (typeof resolveArchitecture === "function") {
+    const arch = resolveArchitecture(data.model, data.parameterHints);
+    if (arch) {
+      archSummary.textContent =
+        `${arch.family} · ${arch.hidden}-dim · ${arch.layers} layers · ${arch.heads} heads` +
+        (arch.kvHeads !== arch.heads ? ` (${arch.kvHeads} KV)` : "") +
+        ` · FFN ${arch.inter}`;
+      networkSection.classList.remove("hidden");
+      window.currentViz = new NetworkVisualizer(vizContainer, arch, data.model);
+    } else {
+      networkSection.classList.add("hidden");
+    }
+  }
 }
 
 /* ── Fetch model data ────────────────────────────────── */
