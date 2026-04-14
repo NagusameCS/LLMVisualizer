@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 // LLM Network Visualizer – bbycroft.net-inspired renderer
 // Interactive transformer architecture on a pannable/zoomable canvas.
-// Weight textures are seeded per-model so each model looks unique.
+// Flat 2D rendering to match the bbycroft visual style.
 // ══════════════════════════════════════════════════════════════
 (function () {
   "use strict";
@@ -113,59 +113,10 @@
     return spec(32000, H, L, heads, kvHeads, inter, 4096, Math.round(H / heads));
   }
 
-  /* ── Mulberry32 PRNG ───────────────────────────────────────── */
-  function mulberry32(a) {
-    return function () {
-      a |= 0; a = a + 0x6D2B79F5 | 0;
-      var t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
   function hashStr(s) {
     var h = 0;
     for (var i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0;
     return h >>> 0;
-  }
-
-  /* ── weight value → RGB (diverging blue–dark–orange) ───────── */
-  function weightRGB(v) {
-    // v in [0,1];  0 = negative, 0.5 = near zero, 1 = positive
-    var r, g, b;
-    if (v < 0.5) {
-      var t = v / 0.5;                         // 0→1 as v goes 0→0.5
-      r = 20 + (80 - 20) * (1 - t) | 0;       // blue-ish
-      g = 30 + (140 - 30) * (1 - t) | 0;
-      b = 40 + (240 - 40) * (1 - t) | 0;
-    } else {
-      var t2 = (v - 0.5) / 0.5;               // 0→1 as v goes 0.5→1
-      r = 20 + (240 - 20) * t2 | 0;           // orange-ish
-      g = 30 + (140 - 30) * t2 | 0;
-      b = 40 + (50  - 40) * t2 | 0;
-    }
-    return [r, g, b];
-  }
-
-  /* ── generate weight texture as offscreen canvas ───────────── */
-  function makeTexture(res, seed) {
-    var c = document.createElement("canvas");
-    c.width = res; c.height = res;
-    var ctx = c.getContext("2d");
-    var img = ctx.createImageData(res, res);
-    var rng = mulberry32(seed);
-    for (var i = 0; i < res * res; i++) {
-      // Box-Muller for normal-ish distribution centred at 0.5
-      var u1 = rng() + 1e-6, u2 = rng();
-      var z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2831853 * u2);
-      var v = Math.max(0, Math.min(1, 0.5 + z * 0.18));
-      var rgb = weightRGB(v);
-      img.data[i * 4]     = rgb[0];
-      img.data[i * 4 + 1] = rgb[1];
-      img.data[i * 4 + 2] = rgb[2];
-      img.data[i * 4 + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-    return c;
   }
 
   /* ── visual dimension: sqrt-compressed so huge dims stay sane  */
@@ -354,9 +305,6 @@
     this.mouseScreenX = 0;
     this.mouseScreenY = 0;
 
-    // Texture cache
-    this.texCache = {};
-
     // Canvas
     this.canvas = null;
     this.ctx = null;
@@ -455,7 +403,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Background
-    ctx.fillStyle = "#0d1117";
+    ctx.fillStyle = "#f8f6f0";
     ctx.fillRect(0, 0, W, H);
 
     // Apply camera
@@ -503,11 +451,11 @@
       if (minX === Infinity) continue;
 
       var pad = 6;
-      ctx.fillStyle = "rgba(22,27,34,0.55)";
+      ctx.fillStyle = "rgba(23, 58, 52, 0.045)";
       ctx.beginPath();
       this.roundRect(ctx, minX - pad, minY - pad - 14, maxX - minX + pad * 2, maxY - minY + pad * 2 + 14, 4);
       ctx.fill();
-      ctx.strokeStyle = "rgba(48,54,61,0.5)";
+      ctx.strokeStyle = "rgba(23, 58, 52, 0.22)";
       ctx.lineWidth = 1 / this.zoom;
       ctx.stroke();
 
@@ -515,7 +463,7 @@
       if (this.zoom > 0.1) {
         var fs = Math.min(10, 10 / this.zoom);
         ctx.font = "600 " + fs + "px 'IBM Plex Mono',monospace";
-        ctx.fillStyle = "rgba(139,148,158,0.8)";
+        ctx.fillStyle = "rgba(54, 79, 74, 0.72)";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
         ctx.fillText("Layer " + li, (minX + maxX) / 2, minY - pad - 2);
@@ -554,18 +502,21 @@
         x2 = tCx; y2 = t.y;
       }
 
-      var alpha = c[2] === "major" ? 0.25 : c[2] === "inter" ? 0.15 : 0.10;
-      ctx.strokeStyle = "rgba(136,198,255," + alpha + ")";
+      var alpha = c[2] === "major" ? 0.48 : c[2] === "inter" ? 0.28 : 0.18;
+      ctx.strokeStyle = "rgba(35, 112, 98," + alpha + ")";
       ctx.beginPath();
       ctx.moveTo(x1, y1);
-      // Bezier for smooth curves
+      // Orthogonal elbow connections are easier to read in dense layouts.
       if (dx > dy * 0.8) {
-        var cpx = (x1 + x2) / 2;
-        ctx.bezierCurveTo(cpx, y1, cpx, y2, x2, y2);
+        var midX = (x1 + x2) / 2;
+        ctx.lineTo(midX, y1);
+        ctx.lineTo(midX, y2);
       } else {
-        var cpy = (y1 + y2) / 2;
-        ctx.bezierCurveTo(x1, cpy, x2, cpy, x2, y2);
+        var midY = (y1 + y2) / 2;
+        ctx.lineTo(x1, midY);
+        ctx.lineTo(x2, midY);
       }
+      ctx.lineTo(x2, y2);
       ctx.stroke();
     }
   };
@@ -579,32 +530,23 @@
     var sp = this.worldToScreen(el.x, el.y);
     if (sp[0] + sw < 0 || sp[0] > this.width || sp[1] + sh < 0 || sp[1] > this.height) return;
 
-    // Base fill
-    ctx.globalAlpha = 0.82;
+    // Flat fill
+    ctx.globalAlpha = 1;
     ctx.fillStyle = el.color;
     ctx.beginPath();
-    this.roundRect(ctx, el.x, el.y, el.w, el.h, 2);
+    this.roundRect(ctx, el.x, el.y, el.w, el.h, 1.25);
     ctx.fill();
 
-    // Weight texture overlay (only when visible enough)
-    if (sw > 20 && sh > 20 && el.type !== "norm") {
-      var tex = this.getTexture(el);
-      ctx.globalAlpha = 0.55;
-      ctx.drawImage(tex, el.x, el.y, el.w, el.h);
-    }
-
-    ctx.globalAlpha = 1;
-
     // Border
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.strokeStyle = "rgba(17, 33, 28, 0.46)";
     ctx.lineWidth = 1 / zoom;
     ctx.beginPath();
-    this.roundRect(ctx, el.x, el.y, el.w, el.h, 2);
+    this.roundRect(ctx, el.x, el.y, el.w, el.h, 1.25);
     ctx.stroke();
 
     // Hover highlight
     if (this.hoveredElement === el) {
-      ctx.strokeStyle = "#58a6ff";
+      ctx.strokeStyle = "#0a7f6f";
       ctx.lineWidth = 2.2 / zoom;
       ctx.beginPath();
       this.roundRect(ctx, el.x - 1 / zoom, el.y - 1 / zoom, el.w + 2 / zoom, el.h + 2 / zoom, 3);
@@ -615,7 +557,7 @@
     if (sw > 18 && sh > 12) {
       var fs = Math.max(5, Math.min(12, el.w * 0.25, el.h * 0.35));
       ctx.font = "700 " + fs + "px 'IBM Plex Mono',monospace";
-      ctx.fillStyle = "#e6edf3";
+      ctx.fillStyle = "rgba(247, 250, 246, 0.92)";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       var lines = el.label.split("\n");
@@ -629,32 +571,24 @@
       if (sw > 50 && sh > 35 && el.dims.length === 2) {
         var subFs = fs * 0.6;
         ctx.font = "400 " + subFs + "px 'IBM Plex Mono',monospace";
-        ctx.fillStyle = "rgba(200,210,220,0.55)";
+        ctx.fillStyle = "rgba(246, 250, 247, 0.76)";
         ctx.fillText(el.dims[0].toLocaleString() + "×" + el.dims[1].toLocaleString(),
                      el.x + el.w / 2, startY + lines.length * lh);
       }
     }
   };
 
-  /* ── texture cache ─────────────────────────────────────────── */
-  NV.getTexture = function (el) {
-    if (this.texCache[el.id]) return this.texCache[el.id];
-    var res = 48;
-    this.texCache[el.id] = makeTexture(res, el.seed);
-    return this.texCache[el.id];
-  };
-
   /* ── HUD (model info overlay) ──────────────────────────────── */
   NV.drawHUD = function (ctx) {
     // Model name badge top-left
     ctx.font = "700 13px 'Space Grotesk',sans-serif";
-    ctx.fillStyle = "rgba(230,237,243,0.85)";
+    ctx.fillStyle = "rgba(20, 44, 39, 0.9)";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText(this.modelName, 14, 12);
 
     ctx.font = "400 11px 'IBM Plex Mono',monospace";
-    ctx.fillStyle = "rgba(139,148,158,0.7)";
+    ctx.fillStyle = "rgba(44, 78, 72, 0.72)";
     var info = this.arch.layers + " layers  ·  " + this.arch.heads + " heads  ·  " +
                "hidden " + this.arch.hidden + "  ·  FFN " + this.arch.inter;
     ctx.fillText(info, 14, 30);
@@ -662,7 +596,7 @@
     // Controls hint bottom-right
     ctx.textAlign = "right";
     ctx.textBaseline = "bottom";
-    ctx.fillStyle = "rgba(139,148,158,0.4)";
+    ctx.fillStyle = "rgba(44, 78, 72, 0.58)";
     ctx.fillText("Scroll to zoom  ·  Drag to pan  ·  Hover for details", this.width - 14, this.height - 10);
 
     // Zoom indicator
@@ -793,7 +727,6 @@
     window.removeEventListener("resize", this._onResize);
     if (this._raf) cancelAnimationFrame(this._raf);
     this.container.innerHTML = "";
-    this.texCache = {};
   };
 
   /* ── exports ───────────────────────────────────────────────── */

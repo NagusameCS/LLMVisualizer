@@ -386,9 +386,12 @@ tr.focus td {
   border-radius: 14px;
   overflow: hidden;
   position: relative;
-  background: #0d1117;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(246, 242, 232, 0.95)),
+    repeating-linear-gradient(90deg, rgba(24, 52, 47, 0.03) 0 1px, transparent 1px 20px),
+    repeating-linear-gradient(0deg, rgba(24, 52, 47, 0.03) 0 1px, transparent 1px 20px);
   cursor: grab;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(24, 52, 47, 0.24);
 }
 
 .network-viz-container:active {
@@ -397,8 +400,8 @@ tr.focus td {
 
 .network-tooltip {
   position: absolute;
-  background: rgba(13, 17, 23, 0.94);
-  color: #e6edf3;
+  background: rgba(253, 251, 244, 0.98);
+  color: #18332d;
   padding: 8px 14px;
   border-radius: 8px;
   font-size: 0.78rem;
@@ -407,8 +410,8 @@ tr.focus td {
   z-index: 10;
   max-width: 280px;
   line-height: 1.5;
-  border: 1px solid rgba(88, 166, 255, 0.25);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(24, 52, 47, 0.25);
+  box-shadow: 0 8px 24px rgba(17, 24, 20, 0.16);
 }
 
 .network-hint {
